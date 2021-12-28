@@ -40,6 +40,7 @@ import proguard.mark.Marker;
 import proguard.obfuscate.Obfuscator;
 import proguard.optimize.Optimizer;
 import proguard.optimize.gson.GsonOptimizer;
+import proguard.optimize.kotlin.KotlinLambdaMerger;
 import proguard.optimize.peephole.LineNumberLinearizer;
 import proguard.preverify.*;
 import proguard.resources.file.ResourceFilePool;
@@ -182,6 +183,11 @@ public class ProGuard
             {
                 shrink();
             }
+
+            // if (configuration.mergeKotlinLambdaClasses)
+            //{
+                mergeKotlinLambdaClasses();
+            //}
 
             if (configuration.optimize)
             {
@@ -468,6 +474,16 @@ public class ProGuard
             new Shrinker(configuration).execute(programClassPool,
                                                 libraryClassPool,
                                                 resourceFilePool);
+    }
+
+    /**
+     * Reduce the size needed to represent Kotlin lambda's.
+     * The classes that are generated for lambda's with a same structure and from the same package are merged into a group.
+     */
+    private void mergeKotlinLambdaClasses() throws IOException {
+        programClassPool = new KotlinLambdaMerger(configuration).execute(programClassPool,
+                                                                         libraryClassPool,
+                                                                         resourceFilePool);
     }
 
 
