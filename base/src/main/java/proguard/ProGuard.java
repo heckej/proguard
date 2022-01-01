@@ -485,6 +485,7 @@ public class ProGuard
                                                                          libraryClassPool,
                                                                          resourceFilePool,
                                                                          extraDataEntryNameMap);
+        shrink();
     }
 
 
