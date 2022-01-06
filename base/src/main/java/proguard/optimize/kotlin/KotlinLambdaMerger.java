@@ -3,27 +3,15 @@ package proguard.optimize.kotlin;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import proguard.Configuration;
-import proguard.classfile.ClassConstants;
-import proguard.classfile.ClassPool;
-import proguard.classfile.Clazz;
-import proguard.classfile.attribute.visitor.AllAttributeVisitor;
-import proguard.classfile.attribute.visitor.DebugAttributeVisitor;
-import proguard.classfile.constant.Constant;
-import proguard.classfile.constant.visitor.ConstantTagFilter;
-import proguard.classfile.instruction.visitor.AllInstructionVisitor;
-import proguard.classfile.instruction.visitor.InstructionConstantVisitor;
 import proguard.classfile.*;
 import proguard.classfile.util.ClassSubHierarchyInitializer;
-import proguard.classfile.util.ClassSuperHierarchyInitializer;
 import proguard.classfile.visitor.*;
 import proguard.io.ExtraDataEntryNameMap;
-import proguard.optimize.OptimizationInfoMemberFilter;
-import proguard.optimize.TimedClassPoolVisitor;
-import proguard.optimize.info.OptimizationCodeAttributeFilter;
-import proguard.optimize.info.ParameterUsageMarker;
-import proguard.optimize.peephole.MethodInliner;
-import proguard.optimize.*;
+import proguard.optimize.MethodInlinerWrapper;
+import proguard.optimize.info.ProgramClassOptimizationInfo;
+import proguard.optimize.info.ProgramClassOptimizationInfoSetter;
 import proguard.resources.file.ResourceFilePool;
+import proguard.util.ProcessingFlags;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -101,8 +89,10 @@ public class KotlinLambdaMerger {
             PackageGrouper packageGrouper = new PackageGrouper();
             lambdaClassPool.classesAccept(packageGrouper);
 
+            // add optimisation info to the lambda's, so that it can be filled out later
+            lambdaClassPool.classesAccept(new ProgramClassOptimizationInfoSetter());
+
             // let the method inliner inline the specific invoke methods into the bridge methods
-            inlineLambdaInvokeMethods(programClassPool, libraryClassPool, lambdaClassPool);
             //lambdaClassPool.classesAccept(new ClassPrinter());
 
             ClassPool lambdaGroupClassPool = new ClassPool();
@@ -115,8 +105,6 @@ public class KotlinLambdaMerger {
                                           new ClassPoolFiller(lambdaGroupClassPool),
                                           newProgramClassPoolFiller),
                                           extraDataEntryNameMap));
-
-            inlineLambdaGroupInvokeMethods(newProgramClassPool, libraryClassPool, lambdaGroupClassPool);
 
             // initialise the super classes of the newly created lambda groups
             ClassSubHierarchyInitializer hierarchyInitializer = new ClassSubHierarchyInitializer();
@@ -151,29 +139,15 @@ public class KotlinLambdaMerger {
         return kotlinFunction0Interface;
     }
 
-    private void inlineLambdaInvokeMethods(ClassPool programClassPool, ClassPool libraryClassPool, ClassPool lambdaClassPool)
+    /**
+     * Checks whether the given lambda class should still be merged.
+     * Returns true if the lambda class has not yet been merged and is allowed to be merged.
+     * @param lambdaClass the lambda class for which should be checked whether it should be merged
+     */
+    public static boolean shouldMerge(ProgramClass lambdaClass)
     {
-        // Make the non-bridge invoke methods private, so they can be inlined.
-        lambdaClassPool.classesAccept(new AllMethodVisitor(
-                new MemberVisitor() {
-                    @Override
-                    public void visitProgramMethod(ProgramClass programClass, ProgramMethod programMethod) {
-                        if ((programMethod.u2accessFlags & AccessConstants.BRIDGE) == 0)
-                        {
-                            if (Objects.equals(programMethod.getName(programClass), "invoke"))
-                            {
-                                programMethod.u2accessFlags &= ~AccessConstants.PUBLIC;
-                                programMethod.u2accessFlags |= AccessConstants.PRIVATE;
-                            }
-                        }
-                    }
-                }
-        ));
-        lambdaClassPool.accept(new MethodInlinerWrapper(this.configuration, programClassPool, libraryClassPool));
-    }
-
-    private void inlineLambdaGroupInvokeMethods(ClassPool programClassPool, ClassPool libraryClassPool, ClassPool lambdaGroupClassPool)
-    {
-        lambdaGroupClassPool.accept(new MethodInlinerWrapper(this.configuration, programClassPool, libraryClassPool));
+        ProgramClassOptimizationInfo optimizationInfo = ProgramClassOptimizationInfo.getProgramClassOptimizationInfo(lambdaClass);
+        return (lambdaClass.getProcessingFlags() & ProcessingFlags.DONT_OPTIMIZE) == 0
+                && optimizationInfo.getLambdaGroup() == null;
     }
 }
