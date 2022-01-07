@@ -55,7 +55,7 @@ implements   KotlinMetadataVisitor
                                                  className + DEFAULT_IMPLEMENTATIONS_SUFFIX;
 
             kotlinClassKindMetadata.accept(clazz,
-                new KotlinInterfaceToDefaultImplsClassVisitor(
+                new KotlinClassToDefaultImplsClassVisitor(
                 new ProgramClassFilter(_clazz -> setNewClassName(_clazz, defaultImplsClassName))));
         }
     }
