@@ -74,6 +74,7 @@ implements   AttributeVisitor,
     private final boolean            android;
     private final boolean            allowAccessModification;
     private final boolean            inlineSingleInvocations;
+    private final boolean            inlineFromOtherClasses;
     private final InstructionVisitor extraInlinedInvocationVisitor;
 
     private final CodeAttributeComposer codeAttributeComposer  = new CodeAttributeComposer();
@@ -154,13 +155,43 @@ implements   AttributeVisitor,
                          boolean            inlineSingleInvocations,
                          InstructionVisitor extraInlinedInvocationVisitor)
     {
+        this(microEdition,
+             android,
+             allowAccessModification,
+             inlineSingleInvocations,
+             true,
+             extraInlinedInvocationVisitor);
+    }
+
+    /**
+     * Creates a new MethodInliner.
+     * @param microEdition            indicates whether the resulting code is
+     *                                targeted at Java Micro Edition.
+     * @param android                 indicates whether the resulting code is
+     *                                targeted at the androidVM.
+     * @param allowAccessModification indicates whether the access modifiers of
+     *                                classes and class members can be changed
+     *                                in order to inline methods.
+     * @param inlineSingleInvocations indicates whether the single invocations
+     *                                should be inlined, or, alternatively,
+     *                                short methods.
+     * @param extraInlinedInvocationVisitor an optional extra visitor for all
+     *                                      inlined invocation instructions.
+     */
+    public MethodInliner(boolean            microEdition,
+                         boolean            android,
+                         boolean            allowAccessModification,
+                         boolean            inlineSingleInvocations,
+                         boolean            inlineFromOtherClasses,
+                         InstructionVisitor extraInlinedInvocationVisitor)
+    {
         this.microEdition                  = microEdition;
         this.android                       = android;
         this.allowAccessModification       = allowAccessModification;
         this.inlineSingleInvocations       = inlineSingleInvocations;
+        this.inlineFromOtherClasses        = inlineFromOtherClasses;
         this.extraInlinedInvocationVisitor = extraInlinedInvocationVisitor;
     }
-
 
     // Implementations for AttributeVisitor.
 
@@ -729,7 +760,12 @@ implements   AttributeVisitor,
             // have any side effects.
             !SideEffectClassChecker.mayHaveSideEffects(targetClass,
                                                        programClass,
-                                                       programMethod))
+                                                       programMethod)                             &&
+
+            DEBUG("Same class?")                                                                  &&
+
+            // Only inline methods from other classes if allowed
+            (programClass != targetClass || inlineFromOtherClasses))
         {
             boolean oldInlining = inlining;
 
