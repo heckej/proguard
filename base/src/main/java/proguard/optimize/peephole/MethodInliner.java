@@ -756,12 +756,7 @@ implements            AttributeVisitor,
             // have any side effects.
             !SideEffectClassChecker.mayHaveSideEffects(targetClass,
                                                        programClass,
-                                                       programMethod)                             &&
-
-            DEBUG("Same class?")                                                                  &&
-
-            // Only inline methods from other classes if allowed
-            (programClass != targetClass || inlineFromOtherClasses))
+                                                       programMethod))
         {
             boolean oldInlining = inlining;
 
