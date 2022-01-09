@@ -5,13 +5,17 @@ import org.apache.logging.log4j.Logger;
 import proguard.Configuration;
 import proguard.classfile.*;
 import proguard.classfile.attribute.Attribute;
+import proguard.classfile.attribute.SignatureAttribute;
 import proguard.classfile.attribute.visitor.AllAttributeVisitor;
 import proguard.classfile.attribute.visitor.AllInnerClassesInfoVisitor;
 import proguard.classfile.attribute.visitor.ClassConstantToClassVisitor;
 import proguard.classfile.attribute.visitor.InnerClassInfoClassConstantVisitor;
+import proguard.classfile.editor.AttributesEditor;
 import proguard.classfile.editor.ClassBuilder;
+import proguard.classfile.editor.ConstantPoolEditor;
 import proguard.classfile.editor.InterfaceAdder;
 import proguard.classfile.util.ClassUtil;
+import proguard.classfile.util.DescriptorClassEnumeration;
 import proguard.classfile.visitor.*;
 import proguard.io.ExtraDataEntryNameMap;
 import proguard.optimize.info.ProgramClassOptimizationInfo;
@@ -43,6 +47,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
     private final Map<Integer, KotlinLambdaGroupInvokeMethodBuilder> invokeMethodBuilders;
     private final InterfaceAdder interfaceAdder;
     private final ExtraDataEntryNameMap extraDataEntryNameMap;
+    private final Map<String, String> interfaceSignatures;
     private static final Logger logger = LogManager.getLogger(KotlinLambdaGroupBuilder.class);
 
     /**
@@ -66,6 +71,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         this.interfaceAdder         = new InterfaceAdder(this.classBuilder.getProgramClass());
         this.extraDataEntryNameMap  = extraDataEntryNameMap;
         this.notMergedLambdaVisitor = notMergedLambdaVisitor;
+        this.interfaceSignatures    = new HashMap<>();
         initialiseLambdaGroup();
     }
 
@@ -150,6 +156,9 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
                                                           null)), // don't revisit the current lambda
                                     null)));
 
+        // Add signature of lambda class to the lambda group
+        addSignature(lambdaClass);
+
         // Add interfaces of lambda class to the lambda group
         // TODO: ensure that only Function interfaces are added
         lambdaClass.interfaceConstantsAccept(this.interfaceAdder);
@@ -169,6 +178,63 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
 
         // replace instantiation of lambda class with instantiation of lambda group with correct id
         updateLambdaInstantiationSite(lambdaClass, lambdaClassId);
+    }
+
+    private void addSignature(ProgramClass lambdaClass)
+    {
+        SignatureAttribute lambdaSignatureAttribute = getSignatureAttribute(lambdaClass);
+        if (lambdaSignatureAttribute != null) {
+            Map<String, String> newInterfaceSignatures = new HashMap<>();
+            String fullSignature = lambdaSignatureAttribute.getSignature(lambdaClass);
+            logger.info("Full signature of lambda {}: {}", lambdaClass, fullSignature);
+            DescriptorClassEnumeration descriptorClassEnumeration =
+                    new DescriptorClassEnumeration(fullSignature);
+            String superClass = descriptorClassEnumeration.nextClassName();
+            logger.info("Super class in signature {} of class {}", superClass, lambdaClass);
+            for (int index = 0; index < lambdaClass.getInterfaceCount(); index++) {
+                String interfaceName = lambdaClass.getInterfaceName(index);
+                String nextFluff = descriptorClassEnumeration.nextFluff();
+                String nextClassName = descriptorClassEnumeration.nextClassName();
+                logger.info("Next fluff when considering interface {}: {}", interfaceName, nextFluff);
+                logger.info("Next class name when considering interface {}: {}", interfaceName, nextClassName);
+                String interfaceSignature = fullSignature.substring(fullSignature.indexOf(superClass) + superClass.length() + 1);
+                if (Objects.equals(nextClassName, interfaceName)) {
+                    if (this.interfaceSignatures.get(interfaceName) == null) {
+                        /*nextFluff = "";
+                        StringBuilder interfaceSignature = new StringBuilder(interfaceName);
+                        while (descriptorClassEnumeration.hasMoreClassNames()) // && !Objects.equals(nextFluff, ";L"))
+                        {
+                            nextFluff = descriptorClassEnumeration.nextFluff();
+                            nextClassName = descriptorClassEnumeration.nextClassName();
+                            logger.info("Next fluff: {}", nextFluff);
+                            logger.info("Next class name: {}", nextClassName);
+                            interfaceSignature.append(nextFluff).append(nextClassName);
+                        }*/
+                        logger.info("Adding signature {} for interface {} to lambda group {}", interfaceSignature, interfaceName, this.classBuilder.getProgramClass());
+                        newInterfaceSignatures.put(interfaceName, interfaceSignature);
+                    } else if (!Objects.equals(this.interfaceSignatures.get(interfaceName), interfaceSignature)) {
+                        throw new IllegalArgumentException("Lambda " + lambdaClass + " cannot be merged with lambda group" +
+                                this.classBuilder.getProgramClass() + ", because the lambda group already contains a specific" +
+                                " signature for interface " + interfaceName + ": " + this.interfaceSignatures.get(interfaceName)
+                                + ". Tried to add signature " + nextClassName);
+                    }
+                }
+            }
+            this.interfaceSignatures.putAll(newInterfaceSignatures);
+        }
+    }
+
+    // TODO: replace this by a visitor
+    private SignatureAttribute getSignatureAttribute(ProgramClass lambdaClass)
+    {
+        for (int index = 0; index < lambdaClass.u2attributesCount; index++)
+        {
+            if (lambdaClass.attributes[index] instanceof SignatureAttribute)
+            {
+                return (SignatureAttribute)lambdaClass.attributes[index];
+            }
+        }
+        return null;
     }
 
     private void inlineMethodsInsideClass(ProgramClass lambdaClass)
@@ -289,6 +355,57 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         }
     }
 
+    private void addSignatureAttribute()
+    {
+        // Add a signature attribute to the lambda group, such that it can be cast to specific
+        // TODO: check whether e.g. Function0<Object> suffices for a lambda that originally implemented Function0<String>
+        //  if a lambda group implementing Function0<Object> can be cast to Function0<String>, then this is sufficient.
+        //  However, if casting is not possible, then it is not possible to merge a lambda that implements Function0<String>
+        //  and a lambda that implements Function0<Integer> in one lambda group, if the signature has to be kept
+        AttributesEditor attributesEditor = new AttributesEditor(this.classBuilder.getProgramClass(), true);
+        attributesEditor.addAttribute(createSignatureAttribute());
+    }
+
+    private SignatureAttribute createSignatureAttribute()
+    {
+        ProgramClass lambdaGroup = this.classBuilder.getProgramClass();
+        ConstantPoolEditor constantPoolEditor = this.classBuilder.getConstantPoolEditor();
+        int signatureConstantIndex = constantPoolEditor.addUtf8Constant(createSignature());
+        int signatureNameConstantIndex = constantPoolEditor.addUtf8Constant(Attribute.SIGNATURE);
+        SignatureAttribute signatureAttribute = new SignatureAttribute(signatureNameConstantIndex,
+                                                                       signatureConstantIndex);
+
+        signatureAttribute.referencedClasses = new Clazz[1 + lambdaGroup.getInterfaceCount()];
+        signatureAttribute.referencedClasses[0] = lambdaGroup.getSuperClass();
+        for (int index = 0; index < lambdaGroup.getInterfaceCount(); index++)
+        {
+            Clazz functionInterface = lambdaGroup.getInterface(index);
+            signatureAttribute.referencedClasses[index + 1] = functionInterface;
+        }
+        return signatureAttribute;
+    }
+
+    private String createSignature()
+    {
+        ProgramClass lambdaGroup = this.classBuilder.getProgramClass();
+        StringBuilder signature = new StringBuilder("L").append(lambdaGroup.getSuperName());
+        signature.append(";");
+        for (int index = 0; index < lambdaGroup.getInterfaceCount(); index++)
+        {
+            //signature.append("L");
+            String interfaceName = lambdaGroup.getInterfaceName(index);
+            String interfaceSignature = this.interfaceSignatures.get(interfaceName);
+            if (interfaceSignature == null)
+            {
+                logger.info("No signature found for interface {} of lambda group {}", interfaceName, lambdaGroup);
+                logger.info("The function interface name {} will be added as signature.", interfaceName);
+                interfaceSignature = interfaceName;
+            }
+            signature.append(interfaceSignature); //.append(";");
+        }
+        return signature.toString();
+    }
+
     public ProgramClass build()
     {
         // create <init>(int id)
@@ -296,6 +413,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         //
         addInitConstructors();
         addInvokeMethods();
+        addSignatureAttribute();
         ProgramClass lambdaGroup = this.classBuilder.getProgramClass();
         lambdaGroup.setProcessingFlags(lambdaGroup.getProcessingFlags() | ProcessingFlags.INJECTED);
         return lambdaGroup;
