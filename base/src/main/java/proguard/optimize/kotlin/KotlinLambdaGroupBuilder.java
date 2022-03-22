@@ -81,7 +81,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
     private void initialiseLambdaGroup()
     {
         addIdField();
-        addFreeVariableFields();
+        //addFreeVariableFields();
     }
 
     private void addIdField()
@@ -93,6 +93,19 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
     {
         // TODO: add support for non-empty closures
         //  by adding fields
+        //  NOTE: this method will probably not be needed, as the maximum number of free variables
+        //  was not previously calculated (and thus not known at this point)
+        Optional<Integer> optionalMaximumClosureSize = closureSizes.stream().max(Comparator.naturalOrder());
+        if (optionalMaximumClosureSize.isPresent())
+        {
+            int maximumClosureSize = optionalMaximumClosureSize.get();
+            for (int fieldIndex = 1; fieldIndex <= maximumClosureSize; fieldIndex++)
+            {
+                this.classBuilder.addField(AccessConstants.FINAL,
+                                           KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + fieldIndex,
+                                           KotlinLambdaGroupBuilder.FIELD_TYPE_FREE_VARIABLE);
+            }
+        }
     }
 
     private KotlinLambdaGroupInvokeMethodBuilder getInvokeMethodBuilder(int arity)
@@ -303,6 +316,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         // create <init>(int id)
         // create invoke(...) method, based on invokeArity
         //
+        addFreeVariableFields();
         addInitConstructors();
         addInvokeMethods();
         ProgramClass lambdaGroup = this.classBuilder.getProgramClass();
