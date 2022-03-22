@@ -24,7 +24,7 @@ public class KotlinLambdaGroupInitBuilder {
         this.classBuilder = classBuilder;
     }
 
-    private static String getInitDescriptorForClosureSize(int closureSize)
+    public static String getInitDescriptorForClosureSize(int closureSize)
     {
         StringBuilder descriptor = new StringBuilder("(");
         for (int argumentIndex = 1; argumentIndex <= closureSize; argumentIndex++)
@@ -42,7 +42,8 @@ public class KotlinLambdaGroupInitBuilder {
     {
         for (int argumentIndex = 1; argumentIndex <= this.closureSize; argumentIndex++)
         {
-            composer.aload(argumentIndex)
+            composer.aload_0()
+                    .aload(argumentIndex)
                     .putfield(this.classBuilder.getProgramClass(),
                               this.classBuilder.getProgramClass().findField(
                                       KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + argumentIndex,
@@ -55,10 +56,9 @@ public class KotlinLambdaGroupInitBuilder {
     public ClassBuilder.CodeBuilder buildCodeBuilder()
     {
         return code -> {
-                code
-                    .aload_0(); // load this class
                     // TODO: load parameter variables and store them in their respective fields
                     addPutFreeVariablesInFieldsInstructions(code)
+                    .aload_0() // load this class
                     .iload(this.closureSize + 1) // load the id argument
                     .putfield(this.classBuilder.getProgramClass(), // store the id in a field
                               this.classBuilder.getProgramClass()
@@ -76,7 +76,7 @@ public class KotlinLambdaGroupInitBuilder {
     public ProgramMethod build()
     {
         // add a classId field to the lambda group
-        ProgramField classIdField = classBuilder.addAndReturnField(AccessConstants.PRIVATE, "classId", "I");
+        //ProgramField classIdField = classBuilder.addAndReturnField(AccessConstants.PRIVATE, "classId", "I");
 
         // add a constructor which takes an id as argument and stores it in the classId field
         return classBuilder.addAndReturnMethod(AccessConstants.PUBLIC,
