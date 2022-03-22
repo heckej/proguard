@@ -122,8 +122,10 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         }
         catch(Exception exception)
         {
-            logger.error("Lambda class {} could not be merged: {}", lambdaClass, exception);
-            if (this.notMergedLambdaVisitor != null) {
+            logger.error("Lambda class {} could not be merged due to an exception during merging: {}", lambdaClass, exception);
+            exception.printStackTrace();
+            if (this.notMergedLambdaVisitor != null)
+            {
                 lambdaClass.accept(this.notMergedLambdaVisitor);
             }
         }
