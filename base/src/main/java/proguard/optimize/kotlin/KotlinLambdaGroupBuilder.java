@@ -17,9 +17,7 @@ import proguard.optimize.info.ProgramMemberOptimizationInfoSetter;
 import proguard.optimize.peephole.SameClassMethodInliner;
 import proguard.util.ProcessingFlags;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * This ClassVisitor can be used to visit Kotlin lambda classes that should be merged into one lambda group.
@@ -38,6 +36,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
     private final ClassPool libraryClassPool;
     private final ClassVisitor notMergedLambdaVisitor;
     private final Map<Integer, KotlinLambdaGroupInvokeMethodBuilder> invokeMethodBuilders;
+    private final Set<Integer> closureSizes;
     private final InterfaceAdder interfaceAdder;
     private final ExtraDataEntryNameMap extraDataEntryNameMap;
     private static final Logger logger = LogManager.getLogger(KotlinLambdaGroupBuilder.class);
@@ -60,6 +59,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         this.programClassPool       = programClassPool;
         this.libraryClassPool       = libraryClassPool;
         this.invokeMethodBuilders   = new HashMap<>();
+        this.closureSizes           = new HashSet<>();
         this.interfaceAdder         = new InterfaceAdder(this.classBuilder.getProgramClass());
         this.extraDataEntryNameMap  = extraDataEntryNameMap;
         this.notMergedLambdaVisitor = notMergedLambdaVisitor;
@@ -150,6 +150,11 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
         // Add interfaces of lambda class to the lambda group
         // TODO: ensure that only Function interfaces are added
         lambdaClass.interfaceConstantsAccept(this.interfaceAdder);
+
+        // Get closure size of lambda
+        Method initMethod = lambdaClass.findMethod(ClassConstants.METHOD_NAME_INIT, null);
+        int closureSize   = ClassUtil.internalMethodParameterCount(initMethod.getDescriptor(lambdaClass));;
+        this.closureSizes.add(closureSize);
 
         ProgramClass lambdaGroup = this.classBuilder.getProgramClass();
         logger.debug("Adding lambda {} to lambda group {}", lambdaClass.getName(), lambdaGroup.getName());
