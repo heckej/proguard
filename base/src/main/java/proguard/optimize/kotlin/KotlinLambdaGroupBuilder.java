@@ -277,8 +277,10 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
     private void addInitConstructors()
     {
         // TODO: add support for non-empty closures
-        KotlinLambdaGroupInitBuilder builder = new KotlinLambdaGroupInitBuilder(0, this.classBuilder);
-        builder.build();
+        for (int closureSize : closureSizes) {
+            KotlinLambdaGroupInitBuilder builder = new KotlinLambdaGroupInitBuilder(closureSize, this.classBuilder);
+            builder.build();
+        }
     }
 
     private void addInvokeMethods()
