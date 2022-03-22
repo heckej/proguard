@@ -47,7 +47,7 @@ public class KotlinLambdaGroupInitBuilder {
                     .putfield(this.classBuilder.getProgramClass(),
                               this.classBuilder.getProgramClass().findField(
                                       KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + argumentIndex,
-                                      KotlinLambdaGroupBuilder.FIELD_TYPE_FREE_VARIABLE
+                                      null
                               ));
         }
         return composer;
