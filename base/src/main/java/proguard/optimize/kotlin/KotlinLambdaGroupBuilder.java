@@ -101,9 +101,15 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
             int maximumClosureSize = optionalMaximumClosureSize.get();
             for (int fieldIndex = 1; fieldIndex <= maximumClosureSize; fieldIndex++)
             {
-                this.classBuilder.addField(AccessConstants.FINAL,
-                                           KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + fieldIndex,
-                                           KotlinLambdaGroupBuilder.FIELD_TYPE_FREE_VARIABLE);
+                // Only add new fields for free variables that don't have a field yet.
+                // Question: why would those fields not exist yet? They should have been copied and renamed ...
+                if (this.classBuilder.getProgramClass().findField(KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + fieldIndex, null) == null)
+                {
+                    logger.warn("A field for free variable " + fieldIndex + " is being added, but it might be unused.");
+                    this.classBuilder.addField(AccessConstants.FINAL,
+                            KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE + fieldIndex,
+                            KotlinLambdaGroupBuilder.FIELD_TYPE_FREE_VARIABLE);
+                }
             }
         }
     }
@@ -239,7 +245,7 @@ public class KotlinLambdaGroupBuilder implements ClassVisitor {
             throw new NullPointerException("No invoke method was found in lambda class " + lambdaClass);
         }
         String newMethodName = createDerivedInvokeMethodName(lambdaClass);
-        invokeMethod.accept(lambdaClass, new MethodCopier(this.classBuilder.getProgramClass(), newMethodName));
+        invokeMethod.accept(lambdaClass, new MethodCopier(this.classBuilder.getProgramClass(), newMethodName, new FieldRenamer(KotlinLambdaGroupBuilder.FIELD_NAME_PREFIX_FREE_VARIABLE)));
         return (ProgramMethod)this.classBuilder.getProgramClass().findMethod(newMethodName, invokeMethod.getDescriptor(lambdaClass));
         // TODO: ensure that fields that are referenced by the copied method exist in the lambda group, are initialised,
         //  and cast to the correct type inside the copied method
